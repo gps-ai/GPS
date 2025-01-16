@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Progress Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { text-align: center; }
+        .student-section { margin-top: 20px; padding: 10px; border: 1px solid #ddd; background-color: #f9f9f9; position: relative; }
+        canvas { max-width: 100%; height: 300px; }
+        .test-item { margin-top: 5px; }
+        .hidden { display: none; }
+        .test-series-container { padding: 10px; border: 1px solid #ddd; margin-top: 10px; cursor: pointer; }
+        .test-series-header { font-weight: bold; cursor: pointer; }
+        .divider { height: 1px; background-color: #ddd; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+    <h1>Gurukul Prasikshan Sansthan - Progress Tracker</h1>
+
+    <div>
+        <label for="student-name">Student Name:</label>
+        <input type="text" id="student-name" placeholder="Enter student name">
+        <button onclick="addStudent()">Add Student</button>
+    </div>
+
+    <div id="search-container">
+        <label for="search-student">Search Student:</label>
+        <input type="text" id="search-student" placeholder="Enter student name to search">
+        <button onclick="searchStudent()">Search</button>
+    </div>
+
+    <div id="student-container"></div>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBU59r0SIZLzAwn93gRxmFbhrdfxaOAqoI",
+            authDomain: "gurukul-prasikshan-sansthan.firebaseapp.com",
+            projectId: "gurukul-prasikshan-sansthan",
+            storageBucket: "gurukul-prasikshan-sansthan.appspot.com",
+            messagingSenderId: "493017428949",
+            appId: "1:493017428949:web:84854c3b85cfe667b9035c",
+            measurementId: "G-CWQL11DMXM"
+        };
+
+        // Initialize Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Fetch and render all students from Firestore
+        async function fetchStudents() {
+            const studentsSnapshot = await db.collection("students").get();
+            studentsSnapshot.forEach(doc => {
+                renderStudentSection(doc.id, doc.data());
+            });
+        }
+
+        // Add a new student
+        async function addStudent() {
+            const studentName = document.getElementById("student-name").value.trim();
+            if (!studentName) return alert("Please enter a student name.");
+
+            // Check if student already exists
+            const studentDoc = await db.collection("students").doc(studentName).get();
+            if (studentDoc.exists) return alert("Student already exists!");
+
+            // Add to Firestore
+            await db.collection("students").doc(studentName).set({ testSeries: [] });
+            renderStudentSection(studentName, { testSeries: [] });
+
+            document.getElementById("student-name").value = "";
+        }
+
+        // Render a student's section
+        function renderStudentSection(name, data) {
+            const container = document.getElementById("student-container");
+            const section = document.createElement("div");
+            section.className = "student-section";
+            section.setAttribute("id", `section-${name}`);
+            section.innerHTML = `
+                <div class="student-header" onclick="toggleVisibility('${name}')">${name}'s Progress</div>
+                <button onclick="deleteStudent('${name}')">Delete Student</button>
+                <button onclick="addTestSeries('${name}')">Add New Test Series</button>
+                <div id="${name}-test-series-list" class="hidden"></div>
+            `;
+            container.appendChild(section);
+
+            data.testSeries.forEach((series, index) => {
+                createTestSeriesBox(name, index, series);
+            });
+        }
+
+        // Add a new test series for a student
+        async function addTestSeries(name) {
+            const seriesName = prompt("Enter the name of this test series:");
+            if (!seriesName) return alert("Please enter a valid test series name.");
+
+            const testNames = [];
+            const marks = [];
+            const maxMarks = [];
+
+            let addMoreTests = true;
+            while (addMoreTests) {
+                const testName = prompt("Enter test name for the series:");
+                const mark = parseInt(prompt("Enter marks obtained:"), 10);
+                const maxMark = parseInt(prompt("Enter maximum marks:"), 10);
+
+                if (isNaN(mark) || isNaN(maxMark) || mark > maxMark) {
+                    alert("Invalid marks! Please try again.");
+                    continue;
+                }
+
+                testNames.push(testName);
+                marks.push(mark);
+                maxMarks.push(maxMark);
+
+                addMoreTests = confirm("Do you want to add another test for this series?");
+            }
+
+            const series = { testNames, marks, maxMarks, seriesName };
+            const studentDoc = await db.collection("students").doc(name).get();
+            const updatedSeries = [...studentDoc.data().testSeries, series];
+
+            await db.collection("students").doc(name).update({ testSeries: updatedSeries });
+
+            const testSeriesListContainer = document.getElementById(`${name}-test-series-list`);
+            createTestSeriesBox(name, updatedSeries.length - 1, series);
+        }
+
+        // Create a test series box
+        function createTestSeriesBox(name, seriesIndex, series) {
+            const testSeriesListContainer = document.getElementById(`${name}-test-series-list`);
+            const testSeriesBox = document.createElement("div");
+            testSeriesBox.className = "test-series-container";
+
+            testSeriesBox.innerHTML = `
+                <div class="test-series-header">${series.seriesName}</div>
+                ${series.testNames.map((test, index) => `
+                    <div class="test-item">
+                        ${test} - Marks: ${series.marks[index]}/${series.maxMarks[index]}
+                    </div>
+                `).join("")}
+            `;
+
+            testSeriesListContainer.appendChild(testSeriesBox);
+        }
+
+        // Delete a student
+        async function deleteStudent(name) {
+            if (confirm(`Are you sure you want to delete ${name}'s records?`)) {
+                await db.collection("students").doc(name).delete();
+                document.getElementById(`section-${name}`).remove();
+            }
+        }
+
+        // Toggle visibility of test series
+        function toggleVisibility(name) {
+            const testSeriesList = document.getElementById(`${name}-test-series-list`);
+            testSeriesList.classList.toggle("hidden");
+        }
+
+        // Initialize the app by fetching all students
+        fetchStudents();
+    </script>
+
+</body>
+</html>
